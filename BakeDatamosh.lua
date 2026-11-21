@@ -65,16 +65,30 @@ local function integer(value, label)
     return math.floor(number + 0.5)
 end
 
-local function capture(comp, output, first, last, path)
+local function trace(job, phase)
+    local log = io.open(job .. "\\trace.txt", "a")
+    if log then
+        log:write(os.date("!%Y-%m-%dT%H:%M:%SZ "), phase, "\n")
+        log:close()
+    end
+end
+
+local function capture(comp, output, first, last, job, pass)
+    trace(job, pass .. ": add Saver")
     local saver = assert(comp:AddTool("Saver", -32768, -32768), "Could not add a temporary Saver.")
     local ok, errorMessage = pcall(function()
         saver:ConnectInput("Input", output)
-        saver.Clip = path
-        assert(comp:Render({
+        saver.Clip = job .. "\\" .. pass .. "\\" .. pass .. "_.exr"
+        trace(job, ("%s: render frames %d to %d"):format(pass, first, last))
+        local rendered = comp:Render({
             Start = first, End = last, Wait = true, Tool = saver, HiQ = true, Proxy = false,
-        }), "Fusion could not render the capture. Check the frame range and clip handles.")
+        })
+        trace(job, pass .. ": render returned " .. tostring(rendered))
+        assert(rendered, "Fusion could not render the capture. Check the frame range and clip handles.")
     end)
+    trace(job, pass .. ": remove Saver")
     saver:Delete()
+    trace(job, pass .. ": Saver removed")
     assert(ok, errorMessage)
 end
 
@@ -118,6 +132,13 @@ local function readJob(jobID)
     local first = job .. "\\frames\\mosh000000.png"
     if not bmd.fileexists(first) then return nil end
     return { id = jobID, folder = job, path = first, count = count, settings = settings }
+end
+
+local function validateBakedFrames(bake)
+    for index = 0, bake.count - 1 do
+        local filename = ("mosh%06d.png"):format(index)
+        assert(bmd.fileexists(bake.folder .. "\\frames\\" .. filename), "The Datamosh cache is missing " .. filename .. ".")
+    end
 end
 
 local function retryInspectorBake(node, settings)
@@ -228,6 +249,7 @@ local function attachPlayback(comp, node, sources, bake, start, renderStart, ren
     local first = start + (anchorOffset == 0 and 1 or 0)
     local last = math.min(start + bake.count - 1, renderEnd - (mode == "Transition" and 1 or 0))
     assert(first <= last, "The cached frames do not overlap the current render range.")
+    validateBakedFrames(bake)
     local width = integer(comp:GetPrefs("Comp.FrameFormat.Width"), "the timeline width")
     local height = integer(comp:GetPrefs("Comp.FrameFormat.Height"), "the timeline height")
     local controls = assert(node:GetAttrs().TOOLS_Name, "Could not identify the Datamosh group.")
@@ -271,6 +293,7 @@ local function attachPlayback(comp, node, sources, bake, start, renderStart, ren
 
     local wasLocked = comp:IsLocked()
     local playback, rewired = nil, 0
+    trace(bake.folder, "playback: attach native group")
     comp:StartUndo("Attach Datamosh Playback")
     if not wasLocked then comp:Lock() end
     local ok, message = pcall(function()
@@ -289,15 +312,10 @@ local function attachPlayback(comp, node, sources, bake, start, renderStart, ren
             rewired = index
         end
     end)
-    if not wasLocked then comp:Unlock() end
-   
-    if ok and not wasLocked then
-        ok, message = pcall(function()
-            local output = mainOutput(playback)
-            local middle = math.floor((first + last) / 2)
-            assert(output[middle], "The native Datamosh graph returned no image in the middle.")
-            assert(output[renderEnd], "The native Datamosh graph returned no image on the last frame.")
-        end)
+    if not wasLocked then
+        trace(bake.folder, "playback: unlock composition")
+        comp:Unlock()
+        trace(bake.folder, "playback: composition unlocked")
     end
     if not ok then
         for index = 1, rewired do pcall(function() targets[index].input:ConnectTo(targets[index].output) end) end
@@ -312,9 +330,10 @@ local function attachPlayback(comp, node, sources, bake, start, renderStart, ren
     comp:SetActiveTool(node)
     local report = io.open(bake.folder .. "\\playback.txt", "w")
     if report then
-        report:write(ok and "OK Native Datamosh graph attached and frame requests succeeded." or ("ERROR " .. tostring(message)))
+        report:write(ok and "OK Native Datamosh graph attached." or ("ERROR " .. tostring(message)))
         report:close()
     end
+    trace(bake.folder, ok and "playback: attached" or ("playback: " .. tostring(message)))
     assert(ok, message)
     print(("Datamosh playback attached on frames %d to %d using bake %s."):format(first, last, bake.id))
 end
@@ -323,6 +342,7 @@ local function attachInspectorPlayback(comp, node, inputs, bake, start, renderSt
     local first = start + (anchorOffset == 0 and 1 or 0)
     local last = math.min(start + bake.count - 1, renderEnd - (bake.settings.Mode == "Transition" and 1 or 0))
     assert(first <= last, "The bake does not overlap the current render range.")
+    validateBakedFrames(bake)
     local before = math.max(0, start - renderStart)
     local after = math.max(0, renderEnd - (start + bake.count - 1))
     local baseName = "DatamoshCache" .. bake.id:gsub("%-", "_")
@@ -353,6 +373,7 @@ local function attachInspectorPlayback(comp, node, inputs, bake, start, renderSt
     local wasLocked = comp:IsLocked()
     local active = comp.ActiveTool
     local loader
+    trace(bake.folder, "playback: attach Loader")
     comp:StartUndo("Bake Datamosh")
     if not wasLocked then comp:Lock() end
     local ok, message = pcall(function()
@@ -360,24 +381,28 @@ local function attachInspectorPlayback(comp, node, inputs, bake, start, renderSt
         comp:SetActiveTool(nil)
         loader = assert(comp:AddTool("Loader", -32768, -32768), "Could not create the Datamosh cache Loader.")
         loader:SetAttrs({ TOOLS_Name = name, TOOLB_NameSet = true })
+        trace(bake.folder, "playback: load sequence settings")
         assert(loader:LoadSettings(settings), "Could not load the baked sequence into the Datamosh cache Loader.")
         loader:SetData("ResolveDatamosh.Cache", true)
         loader:SetData("ResolveDatamosh.Job", bake.id)
+        trace(bake.folder, "playback: connect sequence and set frame window")
         assert(node:ConnectInput("CacheImage", loader.Output), "Could not connect the baked sequence to Datamosh.")
         node:SetInput("CacheFirst", first)
         node:SetInput("CacheLast", last)
     end)
-    if not wasLocked then comp:Unlock() end
+    if not wasLocked then
+        trace(bake.folder, "playback: unlock composition")
+        comp:Unlock()
+        trace(bake.folder, "playback: composition unlocked")
+    end
 
     if ok and not wasLocked then
         ok, message = pcall(function()
-            local middle = math.floor((first + last) / 2)
-            assert(loader.Output[middle], "The Loader could not open the middle of the baked sequence.")
-            assert(tonumber(node:GetInput("CacheFirst", middle)) == first
-                and tonumber(node:GetInput("CacheLast", middle)) == last,
+            -- Inspect the numeric inputs without requesting an image from the Edit-page render thread.
+            trace(bake.folder, "playback: verify frame window")
+            assert(tonumber(node:GetInput("CacheFirst", first)) == first
+                and tonumber(node:GetInput("CacheLast", first)) == last,
                 "Resolve did not apply the baked frame window.")
-            -- GroupOperator output indexing can return nil even when MediaOut
-            -- is connected. The Loader and published inputs validate the attachment.
         end)
     end
 
@@ -402,6 +427,7 @@ local function attachInspectorPlayback(comp, node, inputs, bake, start, renderSt
             or ("ERROR " .. tostring(message)))
         report:close()
     end
+    trace(bake.folder, ok and "playback: attached" or ("playback: " .. tostring(message)))
     assert(ok, message)
     print(("Datamosh baked %d frames from frame %d."):format(bake.count, start))
 end
@@ -468,20 +494,24 @@ local function run()
     config:close()
 
     local captured, captureError = pcall(function()
-        capture(composition, a, anchorFrame, anchorFrame, job .. "\\anchor\\anchor_.exr")
-        capture(composition, transition and b or a, motionFrame, motionFrame + donorCount - 1,
-            job .. "\\motion\\motion_.exr")
+        capture(composition, a, anchorFrame, anchorFrame, job, "anchor")
+        capture(composition, transition and b or a, motionFrame, motionFrame + donorCount - 1, job, "motion")
     end)
+    trace(job, "capture: restore render range")
     composition:SetAttrs({ COMPN_RenderStart = renderStart, COMPN_RenderEnd = renderEnd })
+    trace(job, "capture: restore active tool")
     composition:SetActiveTool(node)
     assert(captured, captureError)
+    trace(job, "capture: complete")
 
     -- The hidden shell receives a fixed command and a generated numeric job ID.
     local systemRoot = assert(os.getenv("SystemRoot"), "SystemRoot is unavailable.")
     local command = '"' .. systemRoot .. [[\System32\cmd.exe" /d /c powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "]] ..
         [[$engine = Join-Path $env:LOCALAPPDATA 'ResolveDatamosh/InvokeDatamosh.ps1'; & $engine -JobId ']] ..
         jobID .. [['"]]
+    trace(job, "codec: launch")
     assert(bmd.executebg(command, true), "Could not start the Datamosh codec helper.")
+    trace(job, "codec: returned")
     local status = io.open(job .. "\\status.txt", "r")
     assert(status, "The codec helper did not finish. Check " .. job)
     local message = status:read("*a")

@@ -31,8 +31,6 @@ if ($useBundledFFmpeg) {
 $files = [ordered]@{
     'Datamosh.fuse' = (Join-Path $fusion 'Fuses\Datamosh.fuse')
     'BakeDatamosh.lua' = (Join-Path $local 'BakeDatamosh.lua')
-    'DatamoshCut.setting' = (Join-Path $fusion 'Templates\Edit\Transitions\DatamoshCut.setting')
-    'DatamoshBloom.setting' = (Join-Path $fusion 'Templates\Edit\Effects\DatamoshBloom.setting')
     'InvokeDatamosh.ps1' = (Join-Path $local 'InvokeDatamosh.ps1')
 }
 
@@ -46,11 +44,38 @@ foreach ($name in $files.Keys) {
 New-Item -ItemType Directory -Force -Path (Join-Path $local 'Jobs') | Out-Null
 [IO.File]::WriteAllText((Join-Path $local 'ffmpeg-path.txt'), $FFmpegPath)
 
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$templates = Join-Path $fusion 'Templates'
+New-Item -ItemType Directory -Force -Path $templates | Out-Null
+$templateBundle = Join-Path $templates 'Datamosh.drfx'
+$stagingPath = Join-Path $templates ('Datamosh-' + [guid]::NewGuid().ToString('N') + '.tmp')
+try {
+    $archive = [IO.Compression.ZipFile]::Open($stagingPath, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive,
+            (Join-Path $PSScriptRoot 'DatamoshCut.setting'), 'Edit/Transitions/Datamosh Cut.setting')
+        [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive,
+            (Join-Path $PSScriptRoot 'DatamoshBloom.setting'), 'Edit/Effects/Datamosh Bloom.setting')
+    } finally {
+        $archive.Dispose()
+    }
+    if (Test-Path -LiteralPath $templateBundle) {
+        [IO.File]::Replace($stagingPath, $templateBundle, [NullString]::Value)
+    } else {
+        [IO.File]::Move($stagingPath, $templateBundle)
+    }
+} finally {
+    if (Test-Path -LiteralPath $stagingPath) { Remove-Item -LiteralPath $stagingPath }
+}
+
 $legacyFiles = @(
     Join-Path $fusion 'Scripts\Comp\Bake Datamosh.lua'
     Join-Path $fusion 'Scripts\Comp\Restore Datamosh Playback.lua'
-    Join-Path $fusion 'Templates\Edit\Transitions\Datamosh Cut.setting'
-    Join-Path $fusion 'Templates\Edit\Effects\Datamosh Bloom.setting'
+    Join-Path $templates 'Edit\Transitions\Datamosh Cut.setting'
+    Join-Path $templates 'Edit\Transitions\DatamoshCut.setting'
+    Join-Path $templates 'Edit\Effects\Datamosh Bloom.setting'
+    Join-Path $templates 'Edit\Effects\DatamoshBloom.setting'
     Join-Path $local 'Invoke-Datamosh.ps1'
 )
 

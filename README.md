@@ -12,7 +12,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\InstallDatamosh.ps1
 
 To use your own FFmpeg build, pass `-FFmpegPath` with the path to `ffmpeg.exe`. The build must support libxvid and have `ffprobe.exe` beside it. Restart Resolve after installation and use **Bake Datamosh** in the Inspector. The installer keeps the bake script under `%LOCALAPPDATA%\ResolveDatamosh`, outside Resolve's Scripts menu.
 
-On upgrade, the installer backs up renamed files and old menu scripts in the same folder. Existing cached frames are preserved. Inspector buttons from earlier Inspector-only installs can still rebake. Effects created before the Inspector-only install need a fresh instance to rebake.
+The installer packages `DatamoshCut.setting` and `DatamoshBloom.setting` in `Datamosh.drfx`. In Resolve’s Effects Library they appear as **Datamosh Cut** and **Datamosh Bloom**.
 
 ## Datamosh Cut
 
