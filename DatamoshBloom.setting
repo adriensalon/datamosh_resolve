@@ -1,0 +1,88 @@
+{
+    Tools = ordered() {
+        DatamoshBloom = GroupOperator {
+            Inputs = ordered() {
+                MainInput1 = InstanceInput { SourceOp = "ShowBake", Source = "Background" },
+                BakeDatamosh = InstanceInput { SourceOp = "ShowBake", Source = "BakeDatamosh" },
+                AnchorOffset = InstanceInput { SourceOp = "ShowBake", Source = "AnchorOffset" },
+                MotionOffset = InstanceInput { SourceOp = "ShowBake", Source = "MotionOffset" },
+                MoshLength = InstanceInput { SourceOp = "ShowBake", Source = "MoshLength" },
+                Quantizer = InstanceInput { SourceOp = "ShowBake", Source = "Quantizer" },
+                CodecSize = InstanceInput { SourceOp = "ShowBake", Source = "CodecSize" },
+                CacheImage = InstanceInput { SourceOp = "CacheResize", Source = "Input" },
+                CacheFirst = InstanceInput { SourceOp = "ShowBake", Source = "CacheFirst", IC_Visible = false },
+                CacheLast = InstanceInput { SourceOp = "ShowBake", Source = "CacheLast", IC_Visible = false },
+            },
+            Outputs = {
+                MainOutput1 = InstanceOutput { SourceOp = "ShowBake", Source = "Output" },
+            },
+            ViewInfo = GroupInfo { Pos = { 0, 0 } },
+            Tools = ordered() {
+                    CacheResize = BetterResize {
+                        Inputs = {
+                            UseFrameFormatSettings = Input { Value = 1 },
+                        },
+                        ViewInfo = OperatorInfo { Pos = { 2, 1 } },
+                    },
+                    ShowBake = Dissolve {
+                        Transitions = { [0] = "DFTDissolve" },
+                        Inputs = {
+                            Foreground = Input { SourceOp = "CacheResize", Source = "Output" },
+                            Mix = Input { Expression = "iif(time >= CacheFirst, iif(time <= CacheLast, 1, 0), 0)" },
+                            CacheFirst = Input { Value = 1 },
+                            CacheLast = Input { Value = 0 },
+                        },
+                        ViewInfo = OperatorInfo { Pos = { 4, 0 } },
+                        UserControls = ordered() {
+                            BakeDatamosh = {
+                                LINKS_Name = "Bake Datamosh", LINKID_DataType = "Number",
+                                INPID_InputControl = "ButtonControl", INP_External = false,
+                                INP_Passive = true, INP_Default = 0,
+                                BTNCS_Execute = "local c = comp or composition or (fusion and fusion:GetCurrentComp())\nif c then\n    local target = tool and tool:GetAttrs().TOOLS_Name\n    c:SetData(\"ResolveDatamosh.ButtonRequest\", { Name = target, Mode = \"Bloom\" })\n    c:RunScript(os.getenv(\"LOCALAPPDATA\") .. \"\\\\ResolveDatamosh\\\\BakeDatamosh.lua\")\nend",
+                            },
+                            AnchorOffset = {
+                                LINKS_Name = "Anchor Offset (Frames)", LINKID_DataType = "Number",
+                                INPID_InputControl = "SliderControl", INP_Integer = true,
+                                INP_Default = 0, INP_MinScale = -24, INP_MaxScale = 24,
+                                INP_MinAllowed = -24, INP_MaxAllowed = 24,
+                            },
+                            MotionOffset = {
+                                LINKS_Name = "Motion Offset (Frames)", LINKID_DataType = "Number",
+                                INPID_InputControl = "SliderControl", INP_Integer = true,
+                                INP_Default = 0, INP_MinScale = -24, INP_MaxScale = 24,
+                                INP_MinAllowed = -24, INP_MaxAllowed = 24,
+                            },
+                            MoshLength = {
+                                LINKS_Name = "Bloom Duration (Frames)", LINKID_DataType = "Number",
+                                INPID_InputControl = "SliderControl", INP_Integer = true,
+                                INP_Default = 18, INP_MinScale = 2, INP_MaxScale = 120,
+                                INP_MinAllowed = 2, INP_MaxAllowed = 120,
+                            },
+                            Quantizer = {
+                                LINKS_Name = "Xvid Quantizer", LINKID_DataType = "Number",
+                                INPID_InputControl = "SliderControl", INP_Integer = true,
+                                INP_Default = 5, INP_MinScale = 2, INP_MaxScale = 20,
+                                INP_MinAllowed = 2, INP_MaxAllowed = 20,
+                            },
+                            CodecSize = {
+                                LINKS_Name = "Codec Size (Long Edge)", LINKID_DataType = "Number",
+                                INPID_InputControl = "SliderControl", INP_Integer = true,
+                                INP_Default = 960, INP_MinScale = 320, INP_MaxScale = 1920,
+                                INP_MinAllowed = 320, INP_MaxAllowed = 1920,
+                            },
+                            CacheFirst = {
+                                LINKID_DataType = "Number", INP_Integer = true,
+                                INP_Default = 1, IC_Visible = false,
+                            },
+                            CacheLast = {
+                                LINKID_DataType = "Number", INP_Integer = true,
+                                INP_Default = 0, IC_Visible = false,
+                            },
+                        },
+                    },
+            },
+        },
+    },
+    ActiveTool = "DatamoshBloom",
+}
+

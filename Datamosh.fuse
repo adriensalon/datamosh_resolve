@@ -1,0 +1,135 @@
+FuRegisterClass("CodecDatamosh", CT_Tool, {
+    REGS_Name = "Datamosh Codec",
+    REGS_Category = "Fuses\\Stylize",
+    REGS_OpIconString = "Mosh",
+    REGS_OpDescription = "Play a baked Xvid datamosh by frame number",
+    REG_OpNoMask = true,
+    REG_NoBlendCtrls = true,
+    REG_NoObjMatCtrls = true,
+    REG_NoMotionBlurCtrls = true,
+    REG_TimeVariant = true,
+    REG_Version = 1,
+})
+
+local function imageInput(tool, label, id, socket)
+    return tool:AddInput(label, id, {
+        LINKID_DataType = "Image",
+        LINK_Main = socket,
+        INP_Required = false,
+        INP_AcceptsDoD = false,
+    })
+end
+
+local function numberInput(tool, label, id, default, low, high)
+    return tool:AddInput(label, id, {
+        LINKID_DataType = "Number",
+        INPID_InputControl = "SliderControl",
+        INP_Integer = true,
+        INP_Default = default,
+        INP_MinScale = low,
+        INP_MaxScale = high,
+        INP_MinAllowed = low,
+        INP_MaxAllowed = high,
+    })
+end
+
+local function hiddenNumber(tool, id)
+    return tool:AddInput(id, id, {
+        LINKID_DataType = "Number",
+        INP_Integer = true,
+        INP_Default = 0,
+        IC_Visible = false,
+    })
+end
+
+function Create()
+    InA = imageInput(self, "Outgoing / Source", "Outgoing", 1)
+    InB = imageInput(self, "Incoming", "Incoming", 2)
+    InCache = imageInput(self, "Baked Frames", "CacheImage", 3)
+    OutImage = self:AddOutput("Output", "Output", { LINKID_DataType = "Image", LINK_Main = 1 })
+
+    InTransition = self:AddInput("Transition Mode", "Transition", {
+        LINKID_DataType = "Number",
+        INPID_InputControl = "CheckboxControl",
+        INP_Integer = true,
+        INP_Default = 0,
+    })
+    InAnchorOffset = numberInput(self, "Anchor Offset (Frames)", "AnchorOffset", 0, -24, 24)
+    InMotionOffset = numberInput(self, "Motion Offset (Frames)", "MotionOffset", 0, -24, 24)
+    InLength = numberInput(self, "Bloom Duration (Frames)", "MoshLength", 18, 2, 120)
+    InQuantizer = numberInput(self, "Xvid Quantizer", "Quantizer", 5, 2, 20)
+    InWidth = numberInput(self, "Codec Size (Long Edge)", "CodecSize", 960, 320, 1920)
+    InProgress = self:AddInput("Transition Progress", "Progress", {
+        LINKID_DataType = "Number",
+        INP_Default = -1,
+        IC_Visible = false,
+    })
+
+    InBakeStart = hiddenNumber(self, "BakeStart")
+    InBakeCount = hiddenNumber(self, "BakeCount")
+    InBakeKey = self:AddInput("BakeKey", "BakeKey", {
+        LINKID_DataType = "Text",
+        INPS_DefaultText = "",
+        INP_Required = false,
+        IC_Visible = false,
+    })
+end
+
+local function integer(value)
+    return math.floor(value + 0.5)
+end
+
+function Process(req)
+    local function number(input)
+        return input:GetValue(req).Value
+    end
+
+    local a, b = InA:GetValue(req), InB:GetValue(req)
+    local transition = number(InTransition) == 1
+    local time = integer(req.Time)
+    local comp = self.Comp
+    local attrs = comp.GetAttrs and comp:GetAttrs() or {}
+    local start = attrs.COMPN_RenderStart or attrs.COMPN_GlobalStart or comp.RenderStart
+    local finish = attrs.COMPN_RenderEnd or attrs.COMPN_GlobalEnd or comp.RenderEnd
+    local result = a or b
+    if transition and b then
+        local progress = number(InProgress)
+        if progress < 0 then
+            local first, last = start or time, finish or time
+            progress = (time - first) / math.max(1, last - first)
+        end
+        if progress >= 0.5 then
+            result = b
+        end
+    end
+
+    local key = InBakeKey:GetValue(req)
+    if not req:IsPreCalc() and result and key and key.Value and key.Value ~= "" then
+        -- Resolve may request a subrange during playback or export. A bake is
+        -- tied to its own frame window and the codec settings, not that request.
+        local bakedSettings = key.Value:match("^%-?%d+:%-?%d+:(.+)$")
+        local settings = ("%d:%d:%d:%d:%d"):format(integer(number(InAnchorOffset)),
+            integer(number(InMotionOffset)), transition and 0 or integer(number(InLength)),
+            integer(number(InQuantizer)), integer(number(InWidth)))
+        if bakedSettings == settings then
+            local bakeStart, count = number(InBakeStart), number(InBakeCount)
+            if time == bakeStart and integer(number(InAnchorOffset)) == 0 and a then
+                result = a
+            elseif time >= bakeStart and time < bakeStart + count then
+                local baked = InCache:GetValue(req)
+                if baked then
+                    local resized = Image({ IMG_Like = result, IMG_CopyChannels = false })
+                    baked:Resize(resized, { RSZ_Filter = "Linear" })
+                    local metadata = resized.Metadata or {}
+                    metadata.ResolveDatamoshFrame = tostring(time - bakeStart)
+                    resized.Metadata = metadata
+                    result = resized
+                end
+            elseif transition and time >= bakeStart + count and b then
+                result = b
+            end
+        end
+    end
+    OutImage:Set(req, result)
+end
+
