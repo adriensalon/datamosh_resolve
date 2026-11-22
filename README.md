@@ -2,6 +2,8 @@
 
 **Datamosh Cut** applies an incoming shot's Xvid motion to pixels from the outgoing shot. **Datamosh Bloom** repeats an Xvid P-frame so motion accumulates within a clip. Both keep a baked image sequence for scrubbing and export.
 
+https://github.com/user-attachments/assets/d5fe598d-1cc8-46ef-bebd-63207038285a
+
 ## Install on Windows
 
 Run the installer from this folder. It installs the bundled Windows x64 FFmpeg and FFprobe with their licenses. [See the dependency inventory](external/ffmpeg/COMPONENTS.md).
