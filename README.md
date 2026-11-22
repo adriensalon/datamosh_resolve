@@ -4,9 +4,11 @@
 # Datamosh for DaVinci Resolve
 
 **Datamosh Cut** applies an incoming shot's Xvid motion to pixels from the outgoing shot. 
+
 https://github.com/user-attachments/assets/d5fe598d-1cc8-46ef-bebd-63207038285a
 
 **Datamosh Bloom** repeats an Xvid P-frame so motion accumulates within a clip. Both keep a baked image sequence for scrubbing and export.
+
 https://github.com/user-attachments/assets/0e580ddf-e91e-4bf7-8877-048c8b8b34d8
 
 ## Install on Windows
